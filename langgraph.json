@@ -1,0 +1,11 @@
+{
+    "dockerfile_lines": [],
+    "graphs": {
+      "binji": "src/binji/graph.py:graph"
+    },
+    "env": "./.env",
+    "python_version": "3.13",
+    "dependencies": [
+      "."
+    ]
+  }
