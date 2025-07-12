@@ -211,3 +211,34 @@ def tavily_research_assistant(state: GraphState, config: Configuration):
                 }
             )
         return {"tavily_research": "", "error": str(e)}
+
+
+def generate_answer(state: GraphState, config: Configuration):
+    try:
+        logger.info("Generate answer")
+        stream_writer = get_stream_writer()
+        stream_writer({"custom_key": "Generating answer..."})
+
+        system_prompt = os.path.join("prompts", "answer_prompt.txt")
+        with open(system_prompt, "r") as f:
+            system_prompt = f.read()
+        system_message = SystemMessage(content=system_prompt)
+        context_message = AIMessage(content=state["tavily_research"], name="tavily_research")
+        human_message = HumanMessage(content=state["question"])
+
+        llm = get_llm(model_name=config["configurable"]["llm_model_general"])
+        response = llm.invoke([system_message, context_message, human_message])
+        answer = response.content
+
+        logger.info(f"Answer: {answer}")
+        return {"final_answer": answer}
+    except Exception as e:
+        logger.error(f"Exception in generate_answer: {e}", exc_info=True)
+        stream_writer = get_stream_writer()
+        if stream_writer:
+            stream_writer(
+                {
+                    "custom_key": f"Unknown error during answer generation. Please try again."
+                }
+            )
+        return {"final_answer": "", "error": str(e)}
