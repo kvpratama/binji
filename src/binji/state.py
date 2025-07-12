@@ -6,8 +6,9 @@ from pydantic import BaseModel, Field
 # Define the state type with annotations
 class GraphState(MessagesState):
     image_path: str
-    description: str
     max_size: int
+    description: str
+    question: str
     final_result: str
 
 

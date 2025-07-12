@@ -7,10 +7,7 @@ from binji.state import GraphState
 from PIL import Image
 from binji.llm import get_llm
 from binji.configuration import Configuration
-# from prompts import load_prompt
 import base64
-
-# from llm_model import get_gemma27b_llm, get_gemma12b_llm
 from langgraph.config import get_stream_writer
 from typing import Dict, List, Literal
 from langchain_core.output_parsers import JsonOutputParser
@@ -25,6 +22,7 @@ logger = logging.getLogger(__name__)
 def preprocess_image(state: GraphState, config: Configuration):
     logger.info(f"Resizing image: {state.get('image_path', '<missing>')}")
     stream_writer = get_stream_writer()
+
     try:
         stream_writer({"custom_key": "Processing the image..."})
         if "image_path" not in state:
@@ -54,7 +52,11 @@ def preprocess_image(state: GraphState, config: Configuration):
     except Exception as e:
         logger.error(f"Exception in preprocess_image: {e}", exc_info=True)
         if stream_writer:
-            stream_writer({"custom_key": f"Error: {str(e)}"})
+            stream_writer(
+                {
+                    "custom_key": f"Unknown error during image processing. Please try again."
+                }
+            )
         return {"image_path": None, "error": str(e)}
 
 
@@ -99,7 +101,11 @@ def process_image_with_llm(
     except Exception as e:
         logger.error(f"Exception in process_image_with_llm: {e}", exc_info=True)
         if stream_writer:
-            stream_writer({"custom_key": f"Error: {str(e)}"})
+            stream_writer(
+                {
+                    "custom_key": f"Unknown error during image processing. Please try again."
+                }
+            )
         return {"error": str(e)}
 
 
@@ -110,7 +116,7 @@ def describe_image(state: GraphState, config: Configuration):
 
             if "description" not in parsed:
                 raise KeyError("'description' key not found in parsed result.")
-            stream_writer({"custom_key": f"Description extracted {parsed}..."})
+            stream_writer({"custom_key": f"Image processed successfully..."})
             return {"description": parsed}
         except Exception as e:
             logger.error(f"Exception in extract_menu postprocess: {e}", exc_info=True)
@@ -122,11 +128,10 @@ def describe_image(state: GraphState, config: Configuration):
         prompt = os.path.join("prompts", "image_prompt.txt")
         with open(prompt, "r") as f:
             prompt = f.read()
-        logger.info("config: ", config)
         return process_image_with_llm(
             state=state,
             log_message="Describe image",
-            stream_message="Describing image...",
+            stream_message="Analyzing image...",
             prompt=prompt,
             model_name=config["configurable"]["visual_model"],
             postprocess_fn=postprocess,
@@ -135,5 +140,40 @@ def describe_image(state: GraphState, config: Configuration):
         logger.error(f"Exception in describe_image: {e}", exc_info=True)
         stream_writer = get_stream_writer()
         if stream_writer:
-            stream_writer({"custom_key": f"Error: {str(e)}"})
+            stream_writer(
+                {
+                    "custom_key": f"Unknown error during image analysis. Please try again."
+                }
+            )
         return {"description": [], "error": str(e)}
+
+
+def generate_question(state: GraphState, config: Configuration):
+    try:
+        logger.info("Generate question")
+        stream_writer = get_stream_writer()
+        stream_writer({"custom_key": "Asking question to expert..."})
+
+        system_prompt = os.path.join("prompts", "question_prompt.txt")
+        with open(system_prompt, "r") as f:
+            system_prompt = f.read()
+        system_message = SystemMessage(content=system_prompt)
+        human_message = HumanMessage(content=state["description"])
+
+        llm = get_llm(model_name=config["configurable"]["llm_model_general"])
+        response = llm.invoke([system_message, human_message])
+        question = response.content
+
+        logger.info(f"Question: {question}")
+        stream_writer({"custom_key": f"Question: {question}"})
+        return {"question": question}
+    except Exception as e:
+        logger.error(f"Exception in generate_question: {e}", exc_info=True)
+        stream_writer = get_stream_writer()
+        if stream_writer:
+            stream_writer(
+                {
+                    "custom_key": f"Unknown error during question generation. Please try again."
+                }
+            )
+        return {"question": "", "error": str(e)}

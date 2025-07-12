@@ -17,6 +17,14 @@ class Configuration(BaseModel):
     disposal_country: Annotated[
         Literal[
             "South Korea",
+            "United States",
+            "Canada",
+            "China"
+            "Taiwan",
+            "United Kingdom",
+            "Japan",
+            "Indonesia",
+            "Singapore",
         ],
         {"__template_metadata__": {"kind": "llm"}},
     ] = Field(
