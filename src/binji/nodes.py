@@ -1,0 +1,139 @@
+# from langgraph.constants import Send
+import os
+import logging
+import time
+from langchain_core.messages import AnyMessage, HumanMessage, AIMessage, SystemMessage
+from binji.state import GraphState
+from PIL import Image
+from binji.llm import get_llm
+from binji.configuration import Configuration
+# from prompts import load_prompt
+import base64
+
+# from llm_model import get_gemma27b_llm, get_gemma12b_llm
+from langgraph.config import get_stream_writer
+from typing import Dict, List, Literal
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langgraph.types import Command
+from pydantic import BaseModel, Field
+from langchain_tavily import TavilySearch
+
+logger = logging.getLogger(__name__)
+
+
+def preprocess_image(state: GraphState, config: Configuration):
+    logger.info(f"Resizing image: {state.get('image_path', '<missing>')}")
+    stream_writer = get_stream_writer()
+    try:
+        stream_writer({"custom_key": "Processing the image..."})
+        if "image_path" not in state:
+            raise KeyError("'image_path' key not found in state.")
+        if "max_size" not in state:
+            raise KeyError("'max_size' key not found in state.")
+
+        image = Image.open(state["image_path"])
+        original_width, original_height = image.size
+        if original_width == 0 or original_height == 0:
+            raise ValueError("Image has zero width or height.")
+
+        # Determine scale factor
+        if original_width > original_height:
+            scale = state["max_size"] / float(original_width)
+        else:
+            scale = state["max_size"] / float(original_height)
+
+        # Calculate new dimensions
+        new_width = int(original_width * scale)
+        new_height = int(original_height * scale)
+        resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        resized_image.save(state["image_path"])
+
+        logger.info(f"Resized image: {state['image_path']}")
+        return {"image_path": state["image_path"]}
+    except Exception as e:
+        logger.error(f"Exception in preprocess_image: {e}", exc_info=True)
+        if stream_writer:
+            stream_writer({"custom_key": f"Error: {str(e)}"})
+        return {"image_path": None, "error": str(e)}
+
+
+def process_image_with_llm(
+    *,
+    state: GraphState,
+    log_message: str,
+    stream_message: str,
+    prompt: str,
+    model_name: str,
+    postprocess_fn=None,
+):
+    logger.info(f"{log_message}: {state.get('image_path', '<missing>')}")
+    stream_writer = get_stream_writer()
+    try:
+        stream_writer({"custom_key": stream_message})
+        if "image_path" not in state:
+            raise KeyError("'image_path' key not found in state.")
+        llm = get_llm(model_name=model_name)
+
+        with open(state["image_path"], "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
+
+        human_message = HumanMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": prompt,
+                },
+                {
+                    "type": "image_url",
+                    "image_url": f"data:image/jpeg;base64,{encoded_image}",
+                },
+            ]
+        )
+
+        response = llm.invoke([human_message])
+        parsed = response.content
+        if postprocess_fn:
+            return postprocess_fn(parsed, stream_writer)
+        return parsed
+    except Exception as e:
+        logger.error(f"Exception in process_image_with_llm: {e}", exc_info=True)
+        if stream_writer:
+            stream_writer({"custom_key": f"Error: {str(e)}"})
+        return {"error": str(e)}
+
+
+def describe_image(state: GraphState, config: Configuration):
+    def postprocess(parsed, stream_writer):
+        try:
+            logger.info(f"Description: {parsed}")
+
+            if "description" not in parsed:
+                raise KeyError("'description' key not found in parsed result.")
+            stream_writer({"custom_key": f"Description extracted {parsed}..."})
+            return {"description": parsed}
+        except Exception as e:
+            logger.error(f"Exception in extract_menu postprocess: {e}", exc_info=True)
+            if stream_writer:
+                stream_writer({"custom_key": f"Error: {str(e)}"})
+            return {"description": [], "error": str(e)}
+
+    try:
+        prompt = os.path.join("prompts", "image_prompt.txt")
+        with open(prompt, "r") as f:
+            prompt = f.read()
+        logger.info("config: ", config)
+        return process_image_with_llm(
+            state=state,
+            log_message="Describe image",
+            stream_message="Describing image...",
+            prompt=prompt,
+            model_name=config["configurable"]["visual_model"],
+            postprocess_fn=postprocess,
+        )
+    except Exception as e:
+        logger.error(f"Exception in describe_image: {e}", exc_info=True)
+        stream_writer = get_stream_writer()
+        if stream_writer:
+            stream_writer({"custom_key": f"Error: {str(e)}"})
+        return {"description": [], "error": str(e)}
