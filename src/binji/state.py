@@ -9,7 +9,8 @@ class GraphState(MessagesState):
     max_size: int
     description: str
     question: str
-    final_result: str
+    tavily_research: str
+    final_answer: str
 
 
 class GraphStateInput(MessagesState):
@@ -18,4 +19,4 @@ class GraphStateInput(MessagesState):
 
 
 class GraphStateOutput(MessagesState):
-    final_result: str
+    final_answer: str

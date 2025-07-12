@@ -7,6 +7,7 @@ from binji.state import GraphState
 from PIL import Image
 from binji.llm import get_llm
 from binji.configuration import Configuration
+from binji.tools import search_tavily
 import base64
 from langgraph.config import get_stream_writer
 from typing import Dict, List, Literal
@@ -15,6 +16,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 from langchain_tavily import TavilySearch
+from langgraph.prebuilt import create_react_agent
 
 logger = logging.getLogger(__name__)
 
@@ -177,3 +179,35 @@ def generate_question(state: GraphState, config: Configuration):
                 }
             )
         return {"question": "", "error": str(e)}
+
+
+def tavily_research_assistant(state: GraphState, config: Configuration):
+    try:
+        logger.info("Tavily research assistant")
+        stream_writer = get_stream_writer()
+        stream_writer({"custom_key": "Researching disposal information..."})
+
+        system_prompt = os.path.join("prompts", "research_prompt.txt")
+        with open(system_prompt, "r") as f:
+            system_prompt = f.read()
+        system_message = SystemMessage(content=system_prompt.format(disposal_country=config["configurable"]["disposal_country"]))
+        human_message = HumanMessage(content=state["question"])
+
+
+        llm = get_llm(model_name=config["configurable"]["llm_model_specialized"])
+        agent_executor = create_react_agent(llm, [search_tavily], prompt=system_message, name="tavily_research_agent")
+        agent_response = agent_executor.invoke({"messages": [human_message]})
+        tavily_research = agent_response['messages'][-1].content
+
+        logger.info(f"Tavily research: {tavily_research}")
+        return {"tavily_research": tavily_research}
+    except Exception as e:
+        logger.error(f"Exception in tavily_research_assistant: {e}", exc_info=True)
+        stream_writer = get_stream_writer()
+        if stream_writer:
+            stream_writer(
+                {
+                    "custom_key": f"Unknown error during researching. Please try again."
+                }
+            )
+        return {"tavily_research": "", "error": str(e)}
