@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 class GraphState(MessagesState):
     image_path: str
     max_size: int
-    description: str
     question: str
     tavily_research: str
     final_answer: str

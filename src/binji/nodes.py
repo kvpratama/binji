@@ -111,25 +111,25 @@ def process_image_with_llm(
         return {"error": str(e)}
 
 
-def describe_image(state: GraphState, config: Configuration):
+def image_question(state: GraphState, config: Configuration):
     def postprocess(parsed, stream_writer):
         try:
-            logger.info(f"Description: {parsed}")
-
-            if "description" not in parsed:
-                raise KeyError("'description' key not found in parsed result.")
+            logger.info(f"Question: {parsed}")
             stream_writer({"custom_key": f"Image processed successfully..."})
-            return {"description": parsed}
+            return {"question": parsed}
         except Exception as e:
-            logger.error(f"Exception in extract_menu postprocess: {e}", exc_info=True)
+            logger.error(f"Exception in describe_image postprocess: {e}", exc_info=True)
             if stream_writer:
                 stream_writer({"custom_key": f"Error: {str(e)}"})
-            return {"description": [], "error": str(e)}
+            return {"question": "", "error": str(e)}
 
     try:
-        prompt = os.path.join("prompts", "image_prompt.txt")
+        prompt = os.path.join("prompts", "imageq_prompt.txt")
         with open(prompt, "r") as f:
             prompt = f.read()
+        prompt = prompt.format(
+            disposal_country=config["configurable"]["disposal_country"]
+        )
         return process_image_with_llm(
             state=state,
             log_message="Describe image",
@@ -147,37 +147,6 @@ def describe_image(state: GraphState, config: Configuration):
                     "custom_key": f"Unknown error during image analysis. Please try again."
                 }
             )
-        return {"description": [], "error": str(e)}
-
-
-def generate_question(state: GraphState, config: Configuration):
-    try:
-        logger.info("Generate question")
-        stream_writer = get_stream_writer()
-        stream_writer({"custom_key": "Asking question to expert..."})
-
-        system_prompt = os.path.join("prompts", "question_prompt.txt")
-        with open(system_prompt, "r") as f:
-            system_prompt = f.read()
-        system_message = SystemMessage(content=system_prompt)
-        human_message = HumanMessage(content=state["description"])
-
-        llm = get_llm(model_name=config["configurable"]["llm_model_general"])
-        response = llm.invoke([system_message, human_message])
-        question = response.content
-
-        logger.info(f"Question: {question}")
-        stream_writer({"custom_key": f"Question: {question}"})
-        return {"question": question}
-    except Exception as e:
-        logger.error(f"Exception in generate_question: {e}", exc_info=True)
-        stream_writer = get_stream_writer()
-        if stream_writer:
-            stream_writer(
-                {
-                    "custom_key": f"Unknown error during question generation. Please try again."
-                }
-            )
         return {"question": "", "error": str(e)}
 
 
@@ -190,14 +159,19 @@ def tavily_research_assistant(state: GraphState, config: Configuration):
         system_prompt = os.path.join("prompts", "research_prompt.txt")
         with open(system_prompt, "r") as f:
             system_prompt = f.read()
-        system_message = SystemMessage(content=system_prompt.format(disposal_country=config["configurable"]["disposal_country"]))
+        system_message = SystemMessage(
+            content=system_prompt.format(
+                disposal_country=config["configurable"]["disposal_country"]
+            )
+        )
         human_message = HumanMessage(content=state["question"])
 
-
         llm = get_llm(model_name=config["configurable"]["llm_model_specialized"])
-        agent_executor = create_react_agent(llm, [search_tavily], prompt=system_message, name="tavily_research_agent")
+        agent_executor = create_react_agent(
+            llm, [search_tavily], prompt=system_message, name="tavily_research_agent"
+        )
         agent_response = agent_executor.invoke({"messages": [human_message]})
-        tavily_research = agent_response['messages'][-1].content
+        tavily_research = agent_response["messages"][-1].content
 
         logger.info(f"Tavily research: {tavily_research}")
         return {"tavily_research": tavily_research}
@@ -206,9 +180,7 @@ def tavily_research_assistant(state: GraphState, config: Configuration):
         stream_writer = get_stream_writer()
         if stream_writer:
             stream_writer(
-                {
-                    "custom_key": f"Unknown error during researching. Please try again."
-                }
+                {"custom_key": f"Unknown error during researching. Please try again."}
             )
         return {"tavily_research": "", "error": str(e)}
 
@@ -223,7 +195,10 @@ def generate_answer(state: GraphState, config: Configuration):
         with open(system_prompt, "r") as f:
             system_prompt = f.read()
         system_message = SystemMessage(content=system_prompt)
-        context_message = AIMessage(content=state["tavily_research"], name="tavily_research")
+
+        context_message = AIMessage(
+            content=state["tavily_research"], name="tavily_research"
+        )
         human_message = HumanMessage(content=state["question"])
 
         llm = get_llm(model_name=config["configurable"]["llm_model_general"])
