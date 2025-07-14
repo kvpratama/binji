@@ -208,6 +208,7 @@ def _base_research_assistant(
             research_result = agent_response["messages"][-1].content
 
         logger.info(f"{research_type.value} research: {research_result}")
+        stream_writer({"custom_key": f"Analyzing information from {research_type.value}..."})
         return {"research": [research_result]}
 
     except Exception as e:
@@ -247,7 +248,7 @@ def generate_answer(state: GraphState, config: Configuration):
     try:
         logger.info("Generate answer")
         stream_writer = get_stream_writer()
-        stream_writer({"custom_key": "Generating answer..."})
+        stream_writer({"custom_key": "Finalizing answer..."})
 
         system_prompt = os.path.join("prompts", "answer_prompt.txt")
         with open(system_prompt, "r") as f:
