@@ -2,7 +2,7 @@
 import os
 import logging
 import time
-from langchain_core.messages import AnyMessage, HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from binji.state import GraphState
 from PIL import Image
 from binji.llm import get_llm
@@ -10,12 +10,9 @@ from binji.configuration import Configuration
 from binji.tools import search_tavily, search_google
 import base64
 from langgraph.config import get_stream_writer
-from typing import Dict, List, Literal
-from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-from langgraph.types import Command
-from pydantic import BaseModel, Field
+from typing import List, Optional
 from langgraph.prebuilt import create_react_agent
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -149,113 +146,91 @@ def image_question(state: GraphState, config: Configuration):
         return {"question": "", "error": str(e)}
 
 
-def tavily_research_assistant(state: GraphState, config: Configuration):
+class ResearchType(Enum):
+    TAVILY = "tavily"
+    GOOGLE = "google"
+    DISPOSAL_GUIDE = "disposal_guide"
+
+
+def _base_research_assistant(
+    state: GraphState, 
+    config: Configuration, 
+    research_type: ResearchType,
+    tools: Optional[List] = None,
+    use_react_agent: bool = True
+):
+    """Base research assistant that handles common logic for all research types."""
     try:
-        logger.info("Tavily research assistant")
+        logger.info(f"{research_type.value} research assistant")
         stream_writer = get_stream_writer()
         stream_writer({"custom_key": "Researching disposal information..."})
 
-        system_prompt = os.path.join("prompts", "research_prompt.txt")
-        with open(system_prompt, "r") as f:
+        # Load system prompt
+        system_prompt_path = os.path.join("prompts", "research_prompt.txt")
+        with open(system_prompt_path, "r") as f:
             system_prompt = f.read()
+        
+        disposal_country = config["configurable"]["disposal_country"]
         system_message = SystemMessage(
-            content=system_prompt.format(
-                disposal_country=config["configurable"]["disposal_country"]
-            )
+            content=system_prompt.format(disposal_country=disposal_country)
         )
+        
         human_message = HumanMessage(content=state["question"])
-
         llm = get_llm(model_name=config["configurable"]["llm_model_specialized"])
-        agent_executor = create_react_agent(
-            llm, [search_tavily], prompt=system_message, name="tavily_research_agent"
-        )
-        agent_response = agent_executor.invoke({"messages": [human_message]})
-        tavily_research = agent_response["messages"][-1].content
+        
+        # Handle disposal guide special case
+        if research_type == ResearchType.DISPOSAL_GUIDE:
+            disposal_guide_prompt_path = os.path.join("prompts", f"disposal_guide_{disposal_country}.txt")
+            with open(disposal_guide_prompt_path, "r", encoding='utf-8') as f:
+                disposal_guide_prompt = f.read()
+            disposal_guide_message = AIMessage(
+                content=disposal_guide_prompt, name="disposal_guide"
+            )
+            agent_response = llm.invoke([system_message, disposal_guide_message, human_message])
+            research_result = agent_response.content
+        else:
+            # Handle Tavily and Google research
+            if not tools:
+                raise ValueError(f"Tools must be provided for {research_type.value} research")
+            
+            agent_executor = create_react_agent(
+                llm, tools, prompt=system_message, name=f"{research_type.value}_research_agent"
+            )
+            agent_response = agent_executor.invoke({"messages": [human_message]})
+            research_result = agent_response["messages"][-1].content
 
-        logger.info(f"Tavily research: {tavily_research}")
-        return {"research": [tavily_research]}
+        logger.info(f"{research_type.value} research: {research_result}")
+        return {"research": [research_result]}
+        
     except Exception as e:
-        logger.error(f"Exception in tavily_research_assistant: {e}", exc_info=True)
+        logger.error(f"Exception in {research_type.value}_research_assistant: {e}", exc_info=True)
         stream_writer = get_stream_writer()
         if stream_writer:
             stream_writer(
                 {"custom_key": f"Unknown error during researching. Please try again."}
             )
         return {"research": [""], "error": str(e)}
+
+
+def tavily_research_assistant(state: GraphState, config: Configuration):
+    """Tavily research assistant node."""
+    return _base_research_assistant(
+        state, config, ResearchType.TAVILY, tools=[search_tavily]
+    )
 
 
 def google_research_assistant(state: GraphState, config: Configuration):
-    try:
-        logger.info("Google research assistant")
-        stream_writer = get_stream_writer()
-        stream_writer({"custom_key": "Researching disposal information..."})
-
-        system_prompt = os.path.join("prompts", "research_prompt.txt")
-        with open(system_prompt, "r") as f:
-            system_prompt = f.read()
-        system_message = SystemMessage(
-            content=system_prompt.format(
-                disposal_country=config["configurable"]["disposal_country"]
-            )
-        )
-        human_message = HumanMessage(content=state["question"])
-
-        llm = get_llm(model_name=config["configurable"]["llm_model_specialized"])
-        agent_executor = create_react_agent(
-            llm, [search_google], prompt=system_message, name="google_research_agent"
-        )
-        agent_response = agent_executor.invoke({"messages": [human_message]})
-        google_research = agent_response["messages"][-1].content
-
-        logger.info(f"Google research: {google_research}")
-        return {"research": [google_research]}
-    except Exception as e:
-        logger.error(f"Exception in google_research_assistant: {e}", exc_info=True)
-        stream_writer = get_stream_writer()
-        if stream_writer:
-            stream_writer(
-                {"custom_key": f"Unknown error during researching. Please try again."}
-            )
-        return {"research": [""], "error": str(e)}
+    """Google research assistant node."""
+    return _base_research_assistant(
+        state, config, ResearchType.GOOGLE, tools=[search_google]
+    )
 
 
 def disposal_guide(state: GraphState, config: Configuration):
-    try:
-        logger.info("Disposal guide")
-        stream_writer = get_stream_writer()
-        stream_writer({"custom_key": "Generating disposal guide..."})
-
-        disposal_country = config["configurable"]["disposal_country"]
-        system_prompt = os.path.join("prompts", f"research_prompt.txt")
-        with open(system_prompt, "r") as f:
-            system_prompt = f.read()
-        system_message = SystemMessage(
-            content=system_prompt.format(
-                disposal_country=disposal_country
-            )
-        )
-        disposal_guide_prompt = os.path.join("prompts", f"disposal_guide_{disposal_country}.txt")
-        with open(disposal_guide_prompt, "r", encoding='utf-8') as f:
-            disposal_guide_prompt = f.read()
-        disposal_guide_message = AIMessage(
-            content=disposal_guide_prompt, name="disposal_guide"
-        )
-        human_message = HumanMessage(content=state["question"])
-
-        llm = get_llm(model_name=config["configurable"]["llm_model_specialized"])
-        agent_response = llm.invoke([system_message, disposal_guide_message, human_message])
-        disposal_guide = agent_response.content
-
-        logger.info(f"Disposal guide: {disposal_guide}")
-        return {"research": [disposal_guide]}
-    except Exception as e:
-        logger.error(f"Exception in disposal_guide: {e}", exc_info=True)
-        stream_writer = get_stream_writer()
-        if stream_writer:
-            stream_writer(
-                {"custom_key": f"Unknown error during researching. Please try again."}
-            )
-        return {"research": [""], "error": str(e)}
+    """Disposal guide node."""
+    return _base_research_assistant(
+        state, config, ResearchType.DISPOSAL_GUIDE, use_react_agent=False
+    )
 
 
 def generate_answer(state: GraphState, config: Configuration):
