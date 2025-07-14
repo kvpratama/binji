@@ -3,6 +3,8 @@
 Meet Binji — your AI-powered companion for smarter, cleaner living.
 Navigating waste disposal rules in a foreign country can be confusing, but Binji makes it simple. Using multi-modal AI, Binji identifies items from a photo and provides clear, location-specific disposal instructions. Whether you're dealing with food waste, plastics, or electronics, Binji ensures you always bin it right — based on local regulations.
 
+Check out the demo : https://kvpratamabinji.streamlit.app/
+
 ## Key Features
 
 *   **Image-based item identification:** Users can take a picture or upload an image of a waste item.
