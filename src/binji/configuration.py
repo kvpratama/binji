@@ -19,7 +19,7 @@ class Configuration(BaseModel):
             "South Korea",
             "United States",
             "Canada",
-            "China"
+            "China",
             "Taiwan",
             "United Kingdom",
             "Japan",
