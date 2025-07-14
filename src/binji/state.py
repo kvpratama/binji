@@ -9,6 +9,7 @@ class GraphState(MessagesState):
     max_size: int
     question: str
     tavily_research: str
+    google_research: str
     disposal_guide: str
     final_answer: str
 

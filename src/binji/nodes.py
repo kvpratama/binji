@@ -7,7 +7,7 @@ from binji.state import GraphState
 from PIL import Image
 from binji.llm import get_llm
 from binji.configuration import Configuration
-from binji.tools import search_tavily
+from binji.tools import search_tavily, search_google
 import base64
 from langgraph.config import get_stream_writer
 from typing import Dict, List, Literal
@@ -15,7 +15,6 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.types import Command
 from pydantic import BaseModel, Field
-from langchain_tavily import TavilySearch
 from langgraph.prebuilt import create_react_agent
 
 logger = logging.getLogger(__name__)
@@ -185,6 +184,41 @@ def tavily_research_assistant(state: GraphState, config: Configuration):
         return {"tavily_research": "", "error": str(e)}
 
 
+def google_research_assistant(state: GraphState, config: Configuration):
+    try:
+        logger.info("Google research assistant")
+        stream_writer = get_stream_writer()
+        stream_writer({"custom_key": "Researching disposal information..."})
+
+        system_prompt = os.path.join("prompts", "research_prompt.txt")
+        with open(system_prompt, "r") as f:
+            system_prompt = f.read()
+        system_message = SystemMessage(
+            content=system_prompt.format(
+                disposal_country=config["configurable"]["disposal_country"]
+            )
+        )
+        human_message = HumanMessage(content=state["question"])
+
+        llm = get_llm(model_name=config["configurable"]["llm_model_specialized"])
+        agent_executor = create_react_agent(
+            llm, [search_google], prompt=system_message, name="google_research_agent"
+        )
+        agent_response = agent_executor.invoke({"messages": [human_message]})
+        google_research = agent_response["messages"][-1].content
+
+        logger.info(f"Google research: {google_research}")
+        return {"google_research": google_research}
+    except Exception as e:
+        logger.error(f"Exception in google_research_assistant: {e}", exc_info=True)
+        stream_writer = get_stream_writer()
+        if stream_writer:
+            stream_writer(
+                {"custom_key": f"Unknown error during researching. Please try again."}
+            )
+        return {"google_research": "", "error": str(e)}
+
+
 def disposal_guide(state: GraphState, config: Configuration):
     try:
         logger.info("Disposal guide")
@@ -238,6 +272,10 @@ def generate_answer(state: GraphState, config: Configuration):
         context_messages = []
         context_message = AIMessage(
             content=state["tavily_research"], name="tavily_research"
+        )
+        context_messages.append(context_message)
+        context_message = AIMessage(
+            content=state["google_research"], name="google_research"
         )
         context_messages.append(context_message)
         context_message = AIMessage(
