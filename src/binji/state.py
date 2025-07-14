@@ -1,16 +1,13 @@
-from typing import List, Dict
+from operator import add
+from typing import List, Annotated
 from langgraph.graph import MessagesState
-from pydantic import BaseModel, Field
 
 
-# Define the state type with annotations
 class GraphState(MessagesState):
     image_path: str
     max_size: int
     question: str
-    tavily_research: str
-    google_research: str
-    disposal_guide: str
+    research: Annotated[List[str], add]
     final_answer: str
 
 

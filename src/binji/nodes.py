@@ -173,7 +173,7 @@ def tavily_research_assistant(state: GraphState, config: Configuration):
         tavily_research = agent_response["messages"][-1].content
 
         logger.info(f"Tavily research: {tavily_research}")
-        return {"tavily_research": tavily_research}
+        return {"research": [tavily_research]}
     except Exception as e:
         logger.error(f"Exception in tavily_research_assistant: {e}", exc_info=True)
         stream_writer = get_stream_writer()
@@ -181,7 +181,7 @@ def tavily_research_assistant(state: GraphState, config: Configuration):
             stream_writer(
                 {"custom_key": f"Unknown error during researching. Please try again."}
             )
-        return {"tavily_research": "", "error": str(e)}
+        return {"research": [""], "error": str(e)}
 
 
 def google_research_assistant(state: GraphState, config: Configuration):
@@ -208,7 +208,7 @@ def google_research_assistant(state: GraphState, config: Configuration):
         google_research = agent_response["messages"][-1].content
 
         logger.info(f"Google research: {google_research}")
-        return {"google_research": google_research}
+        return {"research": [google_research]}
     except Exception as e:
         logger.error(f"Exception in google_research_assistant: {e}", exc_info=True)
         stream_writer = get_stream_writer()
@@ -216,7 +216,7 @@ def google_research_assistant(state: GraphState, config: Configuration):
             stream_writer(
                 {"custom_key": f"Unknown error during researching. Please try again."}
             )
-        return {"google_research": "", "error": str(e)}
+        return {"research": [""], "error": str(e)}
 
 
 def disposal_guide(state: GraphState, config: Configuration):
@@ -247,7 +247,7 @@ def disposal_guide(state: GraphState, config: Configuration):
         disposal_guide = agent_response.content
 
         logger.info(f"Disposal guide: {disposal_guide}")
-        return {"disposal_guide": disposal_guide}
+        return {"research": [disposal_guide]}
     except Exception as e:
         logger.error(f"Exception in disposal_guide: {e}", exc_info=True)
         stream_writer = get_stream_writer()
@@ -255,7 +255,7 @@ def disposal_guide(state: GraphState, config: Configuration):
             stream_writer(
                 {"custom_key": f"Unknown error during researching. Please try again."}
             )
-        return {"disposal_guide": "", "error": str(e)}
+        return {"research": [""], "error": str(e)}
 
 
 def generate_answer(state: GraphState, config: Configuration):
@@ -268,25 +268,13 @@ def generate_answer(state: GraphState, config: Configuration):
         with open(system_prompt, "r") as f:
             system_prompt = f.read()
         system_message = SystemMessage(content=system_prompt)
+        
+        context_str = "\n\n".join(f"{i+1}. {s}" for i, s in enumerate(state["research"]))
 
-        context_messages = []
-        context_message = AIMessage(
-            content=state["tavily_research"], name="tavily_research"
-        )
-        context_messages.append(context_message)
-        context_message = AIMessage(
-            content=state["google_research"], name="google_research"
-        )
-        context_messages.append(context_message)
-        context_message = AIMessage(
-            content=state["disposal_guide"], name="disposal_guide"
-        )
-        context_messages.append(context_message)
+        human_message = HumanMessage(content=f"Context: \n\n{context_str}\n\nQuestion: {state['question']}\n\nMake sure to use the context provided above to answer the question.")
 
-        human_message = HumanMessage(content=state["question"])
-
-        llm = get_llm(model_name=config["configurable"]["llm_model_general"])
-        response = llm.invoke([system_message, *context_messages, human_message])
+        llm = get_llm(model_name=config["configurable"]["llm_model_specialized"])
+        response = llm.invoke([system_message, human_message])
         answer = response.content
 
         logger.info(f"Answer: {answer}")
