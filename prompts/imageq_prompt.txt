@@ -1,0 +1,7 @@
+Based on the image, identify the main item shown and formulate a specific question asking how to dispose of that item in {disposal_country} in general.
+
+Your question should:
+1. Refer to only one clearly identifiable item.
+2. Avoid any mention of the image or that you're referring to an image, since the recipient cannot see it.
+
+Respond only with the question.
