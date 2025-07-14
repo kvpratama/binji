@@ -82,18 +82,14 @@ def search_google(query: str):
         client = genai.Client()
 
         # Define the grounding tool
-        grounding_tool = types.Tool(
-            google_search=types.GoogleSearch()
-        )
+        grounding_tool = types.Tool(google_search=types.GoogleSearch())
 
         # Configure generation settings
-        config = types.GenerateContentConfig(
-            tools=[grounding_tool]
-        )
+        config = types.GenerateContentConfig(tools=[grounding_tool])
 
         # Make the request
         response = client.models.generate_content(
-               model="gemini-2.5-flash-lite-preview-06-17",
+            model="gemini-2.5-flash-lite-preview-06-17",
             contents=query,
             config=config,
         )
