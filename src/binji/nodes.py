@@ -153,11 +153,11 @@ class ResearchType(Enum):
 
 
 def _base_research_assistant(
-    state: GraphState, 
-    config: Configuration, 
+    state: GraphState,
+    config: Configuration,
     research_type: ResearchType,
     tools: Optional[List] = None,
-    use_react_agent: bool = True
+    use_react_agent: bool = True,
 ):
     """Base research assistant that handles common logic for all research types."""
     try:
@@ -169,41 +169,51 @@ def _base_research_assistant(
         system_prompt_path = os.path.join("prompts", "research_prompt.txt")
         with open(system_prompt_path, "r") as f:
             system_prompt = f.read()
-        
+
         disposal_country = config["configurable"]["disposal_country"]
         system_message = SystemMessage(
             content=system_prompt.format(disposal_country=disposal_country)
         )
-        
+
         human_message = HumanMessage(content=state["question"])
         llm = get_llm(model_name=config["configurable"]["llm_model_specialized"])
-        
+
         # Handle disposal guide special case
         if research_type == ResearchType.DISPOSAL_GUIDE:
-            disposal_guide_prompt_path = os.path.join("prompts", f"disposal_guide_{disposal_country}.txt")
-            with open(disposal_guide_prompt_path, "r", encoding='utf-8') as f:
-                disposal_guide_prompt = f.read()
-            disposal_guide_message = AIMessage(
-                content=disposal_guide_prompt, name="disposal_guide"
+            disposal_guide_prompt_path = os.path.join(
+                "prompts", f"disposal_guide_{disposal_country}.txt"
             )
-            agent_response = llm.invoke([system_message, disposal_guide_message, human_message])
+            with open(disposal_guide_prompt_path, "r", encoding="utf-8") as f:
+                disposal_guide = f.read()
+
+            human_message = HumanMessage(
+                content=f"Disposal guide for {disposal_country}:\n\n{disposal_guide}\nQuestion: {state['question']}\n\nMake sure to use the disposal guide provided above to answer the question."
+            )
+            agent_response = llm.invoke([system_message, human_message])
             research_result = agent_response.content
         else:
             # Handle Tavily and Google research
             if not tools:
-                raise ValueError(f"Tools must be provided for {research_type.value} research")
-            
+                raise ValueError(
+                    f"Tools must be provided for {research_type.value} research"
+                )
+
             agent_executor = create_react_agent(
-                llm, tools, prompt=system_message, name=f"{research_type.value}_research_agent"
+                llm,
+                tools,
+                prompt=system_message,
+                name=f"{research_type.value}_research_agent",
             )
             agent_response = agent_executor.invoke({"messages": [human_message]})
             research_result = agent_response["messages"][-1].content
 
         logger.info(f"{research_type.value} research: {research_result}")
         return {"research": [research_result]}
-        
+
     except Exception as e:
-        logger.error(f"Exception in {research_type.value}_research_assistant: {e}", exc_info=True)
+        logger.error(
+            f"Exception in {research_type.value}_research_assistant: {e}", exc_info=True
+        )
         stream_writer = get_stream_writer()
         if stream_writer:
             stream_writer(
@@ -243,10 +253,14 @@ def generate_answer(state: GraphState, config: Configuration):
         with open(system_prompt, "r") as f:
             system_prompt = f.read()
         system_message = SystemMessage(content=system_prompt)
-        
-        context_str = "\n\n".join(f"{i+1}. {s}" for i, s in enumerate(state["research"]))
 
-        human_message = HumanMessage(content=f"Context: \n\n{context_str}\n\nQuestion: {state['question']}\n\nMake sure to use the context provided above to answer the question.")
+        context_str = "\n\n".join(
+            f"{i + 1}. {s}" for i, s in enumerate(state["research"])
+        )
+
+        human_message = HumanMessage(
+            content=f"Context: \n\n{context_str}\n\nQuestion: {state['question']}\n\nMake sure to use the context provided above to answer the question."
+        )
 
         llm = get_llm(model_name=config["configurable"]["llm_model_specialized"])
         response = llm.invoke([system_message, human_message])
