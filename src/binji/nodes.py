@@ -185,6 +185,45 @@ def tavily_research_assistant(state: GraphState, config: Configuration):
         return {"tavily_research": "", "error": str(e)}
 
 
+def disposal_guide(state: GraphState, config: Configuration):
+    try:
+        logger.info("Disposal guide")
+        stream_writer = get_stream_writer()
+        stream_writer({"custom_key": "Generating disposal guide..."})
+
+        disposal_country = config["configurable"]["disposal_country"]
+        system_prompt = os.path.join("prompts", f"research_prompt.txt")
+        with open(system_prompt, "r") as f:
+            system_prompt = f.read()
+        system_message = SystemMessage(
+            content=system_prompt.format(
+                disposal_country=disposal_country
+            )
+        )
+        disposal_guide_prompt = os.path.join("prompts", f"disposal_guide_{disposal_country}.txt")
+        with open(disposal_guide_prompt, "r", encoding='utf-8') as f:
+            disposal_guide_prompt = f.read()
+        disposal_guide_message = AIMessage(
+            content=disposal_guide_prompt, name="disposal_guide"
+        )
+        human_message = HumanMessage(content=state["question"])
+
+        llm = get_llm(model_name=config["configurable"]["llm_model_specialized"])
+        agent_response = llm.invoke([system_message, disposal_guide_message, human_message])
+        disposal_guide = agent_response.content
+
+        logger.info(f"Disposal guide: {disposal_guide}")
+        return {"disposal_guide": disposal_guide}
+    except Exception as e:
+        logger.error(f"Exception in disposal_guide: {e}", exc_info=True)
+        stream_writer = get_stream_writer()
+        if stream_writer:
+            stream_writer(
+                {"custom_key": f"Unknown error during researching. Please try again."}
+            )
+        return {"disposal_guide": "", "error": str(e)}
+
+
 def generate_answer(state: GraphState, config: Configuration):
     try:
         logger.info("Generate answer")
@@ -196,13 +235,20 @@ def generate_answer(state: GraphState, config: Configuration):
             system_prompt = f.read()
         system_message = SystemMessage(content=system_prompt)
 
+        context_messages = []
         context_message = AIMessage(
             content=state["tavily_research"], name="tavily_research"
         )
+        context_messages.append(context_message)
+        context_message = AIMessage(
+            content=state["disposal_guide"], name="disposal_guide"
+        )
+        context_messages.append(context_message)
+
         human_message = HumanMessage(content=state["question"])
 
         llm = get_llm(model_name=config["configurable"]["llm_model_general"])
-        response = llm.invoke([system_message, context_message, human_message])
+        response = llm.invoke([system_message, *context_messages, human_message])
         answer = response.content
 
         logger.info(f"Answer: {answer}")
