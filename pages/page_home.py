@@ -6,20 +6,24 @@ import uuid
 from binji.graph import graph
 from binji.configuration import Configuration
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 st.title("Binji")
+st.subheader("Your AI-powered companion for smarter, cleaner living.")
+st.caption("Helping you navigate waste disposal rules in a foreign country.")
 
 if "thread_id_binji" not in st.session_state:
-    # Turn this into two columns
+    st.write("1. Select the country where you are disposing the waste.")
     disposal_country = st.selectbox(
         "Select disposal country", ["South Korea"]
     )
+    
+    st.markdown("---")
 
+    st.write("2. Upload an image of the waste you want to dispose of. Make sure the image is clear and well-lit.")
     cols = st.columns(2)
     enable = st.checkbox("Enable camera")
     with cols[0]:
@@ -35,13 +39,12 @@ if "thread_id_binji" not in st.session_state:
         st.session_state["thread_id_binji"] = str(uuid.uuid4())
         with st.spinner("Processing..."):
             paths = []
-            # Use the appropriate method to get bytes and extension
             if uploaded_file:
                 file_bytes = uploaded_file.read()
                 file_suffix = os.path.splitext(uploaded_file.name)[1]
             else:
                 file_bytes = camera_image.getvalue()
-                file_suffix = ".jpg"  # camera_input returns jpg
+                file_suffix = ".jpg"
             with tempfile.NamedTemporaryFile(delete=False, suffix=file_suffix) as tmp:
                 logger.info(f"Saving temporary file: {tmp.name}")
                 tmp.write(file_bytes)
@@ -53,7 +56,7 @@ if "thread_id_binji" not in st.session_state:
 if "paths" in st.session_state and "result" not in st.session_state:
     st.image(st.session_state["paths"][0], width=400)
 
-    if st.button("Process image"):
+    if st.button("Ask Binji"):
         with st.spinner("Processing..."):
             input_data = {
                 "image_path": st.session_state["paths"][0],
@@ -82,6 +85,9 @@ if "result" in st.session_state:
     st.image(st.session_state["paths"][0], width=400)
 
     st.markdown(st.session_state["result"]["final_answer"])
+
+    st.markdown("---")
+    st.markdown("*AI can make mistakes. Please double-check the information before disposing of the waste.*")
 
     for path in st.session_state["paths"]:
         try:
