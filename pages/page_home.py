@@ -16,6 +16,10 @@ st.title("Binji")
 
 if "thread_id_binji" not in st.session_state:
     # Turn this into two columns
+    disposal_country = st.selectbox(
+        "Select disposal country", ["South Korea"]
+    )
+
     cols = st.columns(2)
     enable = st.checkbox("Enable camera")
     with cols[0]:
@@ -43,6 +47,7 @@ if "thread_id_binji" not in st.session_state:
                 tmp.write(file_bytes)
                 paths.append(tmp.name)
             st.session_state["paths"] = paths
+            st.session_state["disposal_country"] = disposal_country
             st.rerun()
 
 if "paths" in st.session_state and "result" not in st.session_state:
@@ -60,6 +65,7 @@ if "paths" in st.session_state and "result" not in st.session_state:
                     config={
                         "configurable": Configuration(
                             thread_id=st.session_state["thread_id_binji"],
+                            disposal_country=st.session_state["disposal_country"],
                         ).model_dump()
                     },
                     stream_mode=["values", "custom"],
