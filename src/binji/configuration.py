@@ -8,10 +8,9 @@ import os
 class Configuration(BaseModel):
     """The configuration for the agent."""
 
-    system_prompt: str = Field(
-        default="You are a helpful AI assistant.",
-        description="The system prompt to use for the agent's interactions. "
-        "This prompt sets the context and behavior for the agent.",
+    thread_id: str = Field(
+        ...,  # Use ellipsis (...) to mark the field as required
+        description="The thread ID to use for the agent's interactions.",
     )
 
     disposal_country: Annotated[
